@@ -13,6 +13,7 @@ def make_app(global_config=None, **settings):
         config.add_route("get_link", "/api/links/{code}")
         config.add_route("link_stats", "/api/links/{code}/stats")
         config.add_route("redirect", "/{code}")
+        config.add_tween("shorten_link.auth.api_key_tween_factory")
         config.scan("shorten_link.views")
         app = config.make_wsgi_app()
 

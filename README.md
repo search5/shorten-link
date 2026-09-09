@@ -32,23 +32,45 @@ uv run shorten-link
 | `SHORTEN_LINK_HOST` | `0.0.0.0` | 바인딩 호스트 |
 | `SHORTEN_LINK_PORT` | `6543` | 바인딩 포트 |
 | `SHORTEN_LINK_DB_URL` | `sqlite:///shorten_link.db` | SQLAlchemy 접속 문자열 |
+| `SHORTEN_LINK_API_KEY` | (필수, 기본값 없음) | 관리용 API 인증에 쓰는 토큰. 설정하지 않으면 서버가 기동되지 않는다. |
 
 ```bash
 # 포트를 바꿔서 실행 (예: 6543이 다른 프로세스에서 이미 쓰이는 경우)
-SHORTEN_LINK_PORT=6544 uv run shorten-link
+SHORTEN_LINK_PORT=6544 SHORTEN_LINK_API_KEY=<YOUR_API_KEY> uv run shorten-link
 
 # DB 파일 위치나 종류를 바꾸는 경우
-SHORTEN_LINK_DB_URL=sqlite:////var/data/shorten_link.db uv run shorten-link
+SHORTEN_LINK_DB_URL=sqlite:////var/data/shorten_link.db SHORTEN_LINK_API_KEY=<YOUR_API_KEY> uv run shorten-link
+```
+
+## 인증
+
+단축 링크를 생성/조회/삭제/통계 조회하는 **관리용 API(`/api/links*`)** 는 `SHORTEN_LINK_API_KEY`에 설정한 값을
+`Authorization: Bearer <token>` 헤더로 보내야 호출할 수 있다. 토큰이 없거나 틀리면 `401`이 반환된다.
+
+반면 **`GET /{code}` 리다이렉트는 인증이 필요 없다** — 단축 링크는 누구나 클릭해서 접속해야 하는 것이므로 의도적으로 공개해 둔 것이다.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:6544/api/links \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com"}'
+# 401 (토큰 없음)
+
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:6544/api/links \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com"}'
+# 201 (정상)
 ```
 
 ## 사용법 (curl 예시)
 
-아래는 서버를 `http://127.0.0.1:6544` 로 띄운 상태를 가정한 전체 흐름이다.
+아래는 서버를 `SHORTEN_LINK_API_KEY=<YOUR_API_KEY>`으로 `http://127.0.0.1:6544` 에 띄운 상태를 가정한 전체 흐름이다.
 
 ### 1. 단축 링크 생성
 
 ```bash
 curl -s -X POST http://127.0.0.1:6544/api/links \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://www.google.com/search?q=pyramid"}'
 ```
@@ -62,6 +84,7 @@ curl -s -X POST http://127.0.0.1:6544/api/links \
 
 ```bash
 curl -s -X POST http://127.0.0.1:6544/api/links \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
   -H 'Content-Type: application/json' \
   -d '{"url": "invalid-url"}'
 # {"error":"url 필드는 http:// 또는 https:// 로 시작하는 유효한 주소여야 합니다."}
@@ -70,7 +93,8 @@ curl -s -X POST http://127.0.0.1:6544/api/links \
 ### 2. 원본 URL 조회
 
 ```bash
-curl -s http://127.0.0.1:6544/api/links/2Bi
+curl -s http://127.0.0.1:6544/api/links/2Bi \
+  -H "Authorization: Bearer <YOUR_API_KEY>"
 ```
 
 ```json
@@ -97,7 +121,8 @@ Location: https://www.google.com/search?q=pyramid
 ### 4. 접속 통계 조회
 
 ```bash
-curl -s http://127.0.0.1:6544/api/links/2Bi/stats
+curl -s http://127.0.0.1:6544/api/links/2Bi/stats \
+  -H "Authorization: Bearer <YOUR_API_KEY>"
 ```
 
 ```json
@@ -107,7 +132,8 @@ curl -s http://127.0.0.1:6544/api/links/2Bi/stats
 ### 5. 단축 링크 삭제
 
 ```bash
-curl -s -D - -o /dev/null -X DELETE http://127.0.0.1:6544/api/links/2Bi
+curl -s -D - -o /dev/null -X DELETE http://127.0.0.1:6544/api/links/2Bi \
+  -H "Authorization: Bearer <YOUR_API_KEY>"
 ```
 
 ```
@@ -118,29 +144,31 @@ HTTP/1.1 204 No Content
 - 삭제 후 같은 코드로 조회/리다이렉트하면 모두 `404`가 반환된다.
 
 ```bash
-curl -s http://127.0.0.1:6544/api/links/2Bi
+curl -s http://127.0.0.1:6544/api/links/2Bi \
+  -H "Authorization: Bearer <YOUR_API_KEY>"
 # {"error":"존재하지 않는 코드입니다."}
 ```
 
 ## API 요약
 
-| Method | Path | 설명 |
-|---|---|---|
-| POST | `/api/links` | 단축 링크 생성. 본문: `{"url": "https://..."}` |
-| GET | `/api/links/{code}` | 원본 URL/생성일/조회 수 조회 |
-| GET | `/api/links/{code}/stats` | 조회 수, 마지막 접속 시각 등 통계 |
-| DELETE | `/api/links/{code}` | 링크 삭제 (캐시 항목도 함께 제거) |
-| GET | `/{code}` | 원본 URL로 302 리다이렉트 |
-| GET | `/` | 사용 가능한 엔드포인트 목록 |
+| Method | Path | 인증 | 설명 |
+|---|---|---|---|
+| POST | `/api/links` | 필요 | 단축 링크 생성. 본문: `{"url": "https://..."}` |
+| GET | `/api/links/{code}` | 필요 | 원본 URL/생성일/조회 수 조회 |
+| GET | `/api/links/{code}/stats` | 필요 | 조회 수, 마지막 접속 시각 등 통계 |
+| DELETE | `/api/links/{code}` | 필요 | 링크 삭제 (캐시 항목도 함께 제거) |
+| GET | `/{code}` | 불필요 (공개) | 원본 URL로 302 리다이렉트 |
+| GET | `/` | 불필요 (공개) | 사용 가능한 엔드포인트 목록 |
 
 ## 테스트
 
 ```bash
-uv run pytest
+SHORTEN_LINK_API_KEY=test-api-key uv run pytest   # 테스트 스위트가 자체적으로 값을 설정하므로 보통은 생략 가능
 ```
 
 ## 구조
 
+- `src/shorten_link/auth.py` — 관리용 API 토큰 검사 (Pyramid tween)
 - `src/shorten_link/models.py` — `Link`, `AccessLog` (SQLAlchemy, 기본 SQLite)
 - `src/shorten_link/shortcode.py` — id ↔ base62 코드 인코딩/디코딩 (10000번부터 시작)
 - `src/shorten_link/cache.py` — 코드 → URL 1차 캐시 (OrderedDict 기반 LRU, 코드 단위 삭제 지원)
