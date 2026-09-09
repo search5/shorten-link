@@ -1,0 +1,27 @@
+[project]
+name = "shorten-link"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Lee Ji-ho", email = "search5@mz.co.kr" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pyramid>=2.1",
+    "sqlalchemy>=2.0.52",
+    "waitress>=3.0.2",
+]
+
+[project.scripts]
+shorten-link = "shorten_link:run"
+
+[build-system]
+requires = ["uv_build>=0.10.12,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "webtest>=3.0.7",
+]
